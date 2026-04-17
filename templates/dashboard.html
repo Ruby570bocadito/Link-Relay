@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C2 Team Server - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="topbar">
+        <h2>C2 <span>TEAM SERVER</span></h2>
+        <div>
+            <span style="color: var(--text-secondary); margin-right: 15px; font-size: 13px;">Phase 6 Architecture</span>
+            <a href="{{ url_for('logout') }}" class="btn-secondary" style="text-decoration: none;">Disconnect</a>
+        </div>
+    </div>
+
+    <div class="dashboard-container">
+        
+        <!-- Left Sidebar: Beacons List -->
+        <div class="beacons-list">
+            <h3 style="color: var(--text-secondary); font-size: 14px; margin-bottom: 5px;">ACTIVE BEACONS</h3>
+            <div id="beacons-container">
+                <!-- Inyectado por JS -->
+            </div>
+        </div>
+
+        <!-- Placeholder when no beacon selected -->
+        <div class="no-selection" id="no-selection">
+            Select a Beacon from the list to interact.
+        </div>
+
+        <!-- Right Main: Interaction Panel -->
+        <div class="interaction-panel" id="interaction-panel">
+            <div class="panel-header">
+                <h3>INTERACTING: <span id="current-agent-id" style="color: var(--accent-purple); font-family: monospace;">---</span></h3>
+                <span id="current-agent-ip" style="color: var(--text-secondary); font-size: 12px;">---</span>
+            </div>
+            
+            <div class="toolbar">
+                <button class="btn-secondary" onclick="quickTask('inject network_sweeper', 'inject', 'network_sweeper')">Inyectar Escáner LAN</button>
+                <button class="btn-secondary" onclick="quickTask('elevate', 'elevate')">Bypass UAC (Admin)</button>
+                <button class="btn-secondary" onclick="quickTask('persist', 'persist')">Persistir (OS Enum)</button>
+                <div style="flex: 1"></div>
+                <button class="btn-danger" onclick="quickKill()">Purge & Kill</button>
+            </div>
+
+            <div class="terminal-view" id="terminal-view">
+                <div class="log" style="color: var(--text-secondary);">[System] PTY Emulator Initialized. Connection secure.</div>
+            </div>
+
+            <div class="input-bar">
+                <input type="text" id="cmd-input" placeholder="Execute command (e.g. whoami, sweep 192.168.1.0/24)..." autocomplete="off" spellcheck="false" onkeypress="handleEnter(event)">
+                <button class="btn-primary" style="width: auto; margin-top: 0; padding: 10px 20px;" onclick="sendCmd()">Send</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

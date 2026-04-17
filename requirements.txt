@@ -1,0 +1,30 @@
+# C2 Project - Dependencias
+# =========================
+# Instala con: pip install -r requirements.txt
+
+# Encriptación AES
+pycryptodome>=3.19.0
+
+# Captura de pantalla
+Pillow>=10.0.0
+pyautogui>=0.9.54
+
+# Keylogger (solo Windows)
+pynput>=1.7.6
+
+# Colores en consola
+colorama>=0.4.6
+
+# Para ofuscación (opcional)
+# pyinstaller>=6.0.0
+
+# Requests para comunicación HTTP
+requests>=2.31.0
+
+# Para persistencia
+# pywin32>=306  # Solo Windows
+
+# IA y Visión (Solo Server, opcional agente sin Ultralytics)
+opencv-python>=4.8.0
+ultralytics>=8.0.0
+numpy>=1.24.0

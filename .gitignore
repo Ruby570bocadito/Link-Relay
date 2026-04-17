@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# C2 Logs & Artifacts
+logs/*
+transfers/*
+c2_database.json
+!logs/.gitkeep
+!transfers/.gitkeep
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Ocultos y SO
+.DS_Store
+Thumbs.db
