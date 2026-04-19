@@ -143,6 +143,24 @@ function quickKill() {
     }
 }
 
+let isInteractive = false;
+let pollingInterval = null;
+
+function toggleInteractive(enable) {
+    isInteractive = enable;
+    if(enable) {
+        quickTask('Switching to Real-Time PTY (0.5s Sleep, No Jitter)...', 'sleep', '0.5 0');
+        appendLog('[*] Real-Time Terminal enabed (Warning: Network Noisy)', 'cmd');
+        clearInterval(pollingInterval);
+        pollingInterval = setInterval(pollResults, 500); // 500ms Instant Polling
+    } else {
+        quickTask('Reverting to Ghost Mode (300s Sleep, 30% Jitter)...', 'sleep', '300 0.3');
+        appendLog('[*] Ghost Mode enabled (Silent Sleep)', 'cmd');
+        clearInterval(pollingInterval);
+        pollingInterval = setInterval(pollResults, 3000); // 3s UI Polling
+    }
+}
+
 // Poll for Results
 async function pollResults() {
     try {
@@ -166,7 +184,7 @@ async function pollResults() {
 
 // Start Background Loop
 setInterval(fetchBeacons, 2000);
-setInterval(pollResults, 1500);
+pollingInterval = setInterval(pollResults, 3000); // UI Polling lento por defecto
 
 // Initial Load
 fetchBeacons();

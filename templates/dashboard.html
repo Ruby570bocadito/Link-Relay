@@ -39,9 +39,10 @@
             </div>
             
             <div class="toolbar">
-                <button class="btn-secondary" onclick="quickTask('inject network_sweeper', 'inject', 'network_sweeper')">Inyectar Escáner LAN</button>
-                <button class="btn-secondary" onclick="quickTask('elevate', 'elevate')">Bypass UAC (Admin)</button>
-                <button class="btn-secondary" onclick="quickTask('persist', 'persist')">Persistir (OS Enum)</button>
+                <button class="btn-secondary" onclick="toggleInteractive(true)">⚡ Real-Time PTY</button>
+                <button class="btn-secondary" onclick="toggleInteractive(false)">👻 Ghost Mode</button>
+                <button class="btn-secondary" onclick="quickTask('elevate', 'elevate')">Bypass UAC</button>
+                <button class="btn-secondary" onclick="quickTask('persist', 'persist')">Persistir</button>
                 <div style="flex: 1"></div>
                 <button class="btn-danger" onclick="quickKill()">Purge & Kill</button>
             </div>
