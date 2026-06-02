@@ -39,22 +39,13 @@
 ### Architecture Flow
 
 ```mermaid
-sequenceDiagram
-    participant C as Client
-    participant T as Encrypted Tunnel
-    participant R as Relay Server
-    participant TG as Target
-
-    C->>T: Encrypt & Send Payload
-    T->>R: Relay Encrypted Packet
-    R->>R: Decrypt & Route
-    R->>TG: Forward Decrypted Command
-    TG->>R: Encrypt & Send Response
-    R->>T: Relay Response
-    T->>C: Decrypt & Deliver
-    
-    Note over C,TG: End-to-End Encryption
-    Note over R: No Persistent Storage
+graph LR
+    A[Client] --> B[Encrypted Tunnel]
+    B --> C[Relay Server]
+    C --> D[Target]
+    D --> C
+    C --> B
+    B --> A
 ```
 
 ---
