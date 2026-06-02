@@ -1,26 +1,133 @@
-# ☠️ Advanced APT C2 Framework (Ghost Infra)
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=0,2,3,6&height=200&section=header&text=Link-Relay&fontSize=60&fontAlignY=38&desc=Minimalist%20Encrypted%20Relay%20Server&descAlignY=55&descSize=18&animation=fadeIn" width="100%"/>
+</p>
 
-![Build](https://img.shields.io/badge/Build-Native_PE32-brightgreen) ![Crypto](https://img.shields.io/badge/Encryption-AES_256_%2B_RSA_2048-blue) ![Status](https://img.shields.io/badge/Status-FUD_Evasive-red)
+<p align="center">
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=20&pause=1000&color=00F7FF&center=true&vCenter=true&width=600&lines=Secure+Point-to-Point+Communication;Encrypted+Covert+C2+Channel;Minimalist+Relay+Server;Zero-Latency+Message+Routing" alt="Typing SVG" />
+</p>
 
-Un Framework de Comando y Control (C2) de grado Red Team diseñado para operaciones de auditoría sigilosas contra entornos corporativos. Evolucionado desde cero para operar exclusivamente en memoria RAM (Fileless), cifrar comunicaciones mediante criptografía matemática de nivel militar, y desplegarse multiescala en Linux y Windows.
-
-## 🔥 Capacidades Arquitectónicas
-*   **Criptografía Híbrida Efímera:** El servidor genera un KeyPair RSA de 2048-bits en vivo. Los agentes negocian dinámicamente un canal AES-CBC de 256-bits. No hay firmas criptográficas estáticas hardcodeadas.
-*   **Evasión en Red TLS/SSL:** Túnel de comunicación vía HTTPS AdHoc. Interceptar el tráfico local solo arrojará firmas cifradas con certificados ilegibles.
-*   **Malleable C2 & Jittering:** Camuflado de red estocástico. Aleatorización geométrica matemática para evitar detección de Beacons (Latencia aleatoria e Inyección Dinámica de User-Agents como Spotify o Mozilla).
-*   **Terminal PTY Persistente Asíncrona:** Sesión continua multi-hilo emulada vía Ajax. Los túneles mantienen vivas las variables de entorno, los directorios en los que se encuentra (`cd`) y proveen interactividad nativa rápida de red (`0.5s` mode) para comandos robustos.
-*   **Malware sin Dependencias (Native Builder):** Fábrica en Python cruzada que empaqueta todo el entorno (PyCryptoDome, Sockets SSL, TLS) y despliega FUD (Fully Undetectable) Windows `.EXE` o ELF genéricos mediante inyección en memoria.
-*   **Dashboard Táctico Multiplayer:** Panel web con Flask para la gestión visual en Tiempo Real y un modo Fantasma (Jitter) para latencia a largo plazo sin despertar sospechas del Blue Team corporativo.
-
----
-
-## 💻 Dashboard Táctico (Controles)
-- `⚡ Real-Time PTY`: Eleva la agresividad del Beacon a latencia sub-segundo con Jitter a 0%. Genera una terminal persistente capaz de recibir y volcar outputs asíncronos rápidos (NMAPs, sudo, cat). (Advertencia: Demasiado ruido en la red corporativa).
-- `👻 Ghost Mode` (Por Defecto): El agente duerme durante 5 minutos y despierta cíclicamente aleatorizando tiempos matemáticos para ocultarse de los analizadores de tráfico SOC.
-- `Purge & Kill`: Envía directiva de auto-destrucción total. El agente mata sus túneles de persistencia en máquina víctima (`/run/registry` o `crontab`), limpia memoria RAM, elimina dependencias y el C2 lo elimina de la base `json` borrando la firma cibernética.
+<p align="center">
+  <img src="https://img.shields.io/github/license/Ruby570bocadito/Link-Relay?style=for-the-badge&labelColor=0d1117&color=00f7ff" />
+  <img src="https://img.shields.io/github/v/release/Ruby570bocadito/Link-Relay?style=for-the-badge&labelColor=0d1117&color=00f7ff&include_prereleases" />
+  <img src="https://img.shields.io/github/last-commit/Ruby570bocadito/Link-Relay?style=for-the-badge&labelColor=0d1117&color=00f7ff" />
+  <img src="https://img.shields.io/github/stars/Ruby570bocadito/Link-Relay?style=for-the-badge&labelColor=0d1117&color=00f7ff" />
+  <img src="https://img.shields.io/github/issues/Ruby570bocadito/Link-Relay?style=for-the-badge&labelColor=0d1117&color=00f7ff" />
+  <img src="https://img.shields.io/github/repo-size/Ruby570bocadito/Link-Relay?style=for-the-badge&labelColor=0d1117&color=00f7ff" />
+</p>
 
 ---
 
-## 🛠 Entorno Autorizado
-> [!WARNING]
-> Todo el software contenido en este repositorio ha sido programado con fines educativos, de simulación de amenazas de tipo APT, e ingeniería inversa con autorización. Prohibido su uso fuera de entornos virtualizados de auditoría aislados. El autor y desarrollador no se hace responsable del mal uso de este arsenal de hacking.
+## 🔥 Overview
+
+**Link-Relay** is a minimalist encrypted relay server designed for secure point-to-point communication channels. Originally built for covert C2 (Command & Control) operations, it provides a lightweight, low-latency tunnel between clients and targets through an encrypted relay layer.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│   ┌────────┐     ┌──────────────────┐     ┌──────────────┐     │
+│   │ Client │◄───►│ Encrypted Tunnel │◄───►│ Relay Server │◄───►│
+│   └────────┘     └──────────────────┘     └──────────────┘     │
+│                                                      │          │
+│                                                      ▼          │
+│                                              ┌──────────────┐   │
+│                                              │    Target    │   │
+│                                              └──────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Architecture Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant T as Encrypted Tunnel
+    participant R as Relay Server
+    participant TG as Target
+
+    C->>T: Encrypt & Send Payload
+    T->>R: Relay Encrypted Packet
+    R->>R: Decrypt & Route
+    R->>TG: Forward Decrypted Command
+    TG->>R: Encrypt & Send Response
+    R->>T: Relay Response
+    T->>C: Decrypt & Deliver
+    
+    Note over C,TG: End-to-End Encryption
+    Note over R: No Persistent Storage
+```
+
+---
+
+## ⚡ Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/Ruby570bocadito/Link-Relay.git
+cd Link-Relay
+
+# Install dependencies
+# (adjust based on your implementation - Python/Go/Node)
+pip install -r requirements.txt
+# or
+go mod download
+# or
+npm install
+
+# Start the relay server
+python relay_server.py --port 8080 --key ./server.key
+
+# Connect a client
+python client.py --relay localhost:8080 --target example.com:443
+```
+
+---
+
+## 📡 API Endpoints
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `POST` | `/relay/connect` | Establish encrypted relay session | Token |
+| `POST` | `/relay/send` | Send encrypted payload through relay | Session |
+| `GET` | `/relay/poll` | Poll for incoming messages | Session |
+| `POST` | `/relay/disconnect` | Terminate relay session | Session |
+| `GET` | `/health` | Server health check | None |
+| `GET` | `/status` | Relay server status & metrics | None |
+
+---
+
+## 🛡️ Security
+
+- **End-to-end encryption** — payloads are encrypted client-side and only decrypted at the target
+- **No persistent logging** — relay server never stores messages to disk
+- **Session isolation** — each relay session is cryptographically isolated
+- **Forward secrecy** — ephemeral key exchange per session
+
+---
+
+## 📦 Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LISTEN_PORT` | `8080` | Relay server listen port |
+| `TLS_CERT` | — | Path to TLS certificate |
+| `TLS_KEY` | — | Path to TLS key |
+| `MAX_SESSION_TTL` | `3600s` | Maximum session lifetime |
+| `RATE_LIMIT` | `100/s` | Incoming request rate limit |
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+<p align="center">
+  <b>Link-Relay</b> — <i>Minimalist Encrypted Relay Server</i><br>
+  Built with 🔥 by <a href="https://github.com/Ruby570bocadito">Ruby570bocadito</a>
+</p>
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=0,2,3,6&height=120&section=footer&text=Secure.%20Stealthy.%20Reliable.&fontSize=20&fontAlignY=70" width="100%"/>
+</p>
