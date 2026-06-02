@@ -21,6 +21,16 @@ ENV/
 env.bak/
 venv.bak/
 
+# Modelos de IA (se descargan automáticamente)
+*.pt
+yolov8n.pt
+yolov8*.pt
+
+# Build artifacts
+arsenal/dist/
+arsenal/build/
+*.spec
+
 # Ocultos y SO
 .DS_Store
 Thumbs.db
